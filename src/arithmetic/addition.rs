@@ -22,11 +22,11 @@ pub fn csa(
     );
 
     (0..shifted).for_each(|i| sc_xor.insert(0, sc_xor[i].clone()));
-    (0..shifted-1).for_each(|i| sc_and.insert(0, sc_and[i].clone()));
+    (0..shifted).for_each(|i| sc_and.insert(0, sc_and[i].clone()));
 
     let (new_sum, mut new_carry) = rayon::join(
-        || xor(&pp, &sc_xor, sk),
-        || xor(&sc_and, &and(&pp[1..], &sc_xor[1..], sk), sk),
+        || xor(pp, &sc_xor, sk),
+        || xor(&sc_and[1..], &and(&pp[1..], &sc_xor[1..], sk), sk),
     );
 
     // Carry-out has been discarded and carry-in is set to 0
@@ -36,24 +36,21 @@ pub fn csa(
 }
 
 // Accepts either 257 bits or 130
-pub fn twos_complement(bits: &Vec<Ciphertext>, sk: &ServerKey) -> Vec<Ciphertext> {
+pub fn twos_complement(bits: &[Ciphertext], sk: &ServerKey) -> Vec<Ciphertext> {
     let n = bits.len();
     assert!(n == 257 || n == 130);
 
     // Bitwise NOT
-    let complement = not(bits, sk);
+    let negated = not(bits, sk);
 
     // Add 1 to the result
-    let mut one = Vec::new();
-    for _ in 0..n-1 {
-        one.push(sk.trivial_encrypt(false));
-    }
+    let mut one = vec![sk.trivial_encrypt(false); n - 1];
     one.push(sk.trivial_encrypt(true));
 
     let (complement, _) = if n == 257 {
-        add_257(&complement, &one, sk)
+        add_257(&negated, &one, sk)
     } else {
-        add_130(&complement, &one, sk)
+        add_130(&negated, &one, sk)
     };
 
     complement
@@ -219,7 +216,7 @@ pub fn add_385_with_256(
     assert_eq!(b.len(), 256);
 
     // Add the 256 LSB
-    let (sum_lsb, carry) = add(&a[129..], &b[..], 8, sk);
+    let (sum_lsb, carry) = add(&a[129..], b, 8, sk);
 
     let propagate = &a[1..129];
     let mut generate: Vec<Ciphertext> = (0..128).map(|_| sk.trivial_encrypt(false)).collect();
@@ -227,11 +224,11 @@ pub fn add_385_with_256(
 
     // Next 128-bit addition
     let (mut carry_signals, carry_out) =
-        ladner_fischer(&propagate, &generate, 7, sk);
+        ladner_fischer(propagate, &generate, 7, sk);
 
     // The last carry signals bit is the carry-in
     carry_signals[127] = carry;
-    let sum = xor(&carry_signals, &propagate, sk);
+    let sum = xor(&carry_signals, propagate, sk);
 
     // Full adder to handle the MSB
     let (carry_out, sum_msb) = rayon::join(
@@ -291,9 +288,7 @@ fn ladner_fischer(
     }
 
     let mut carry: Vec<Ciphertext> = (0..bits).map(|_| sk.trivial_encrypt(false)).collect();
-    for bit in 0..bits - 1 {
-        carry[bit] = generate[bit + 1].clone();
-    }
+    carry[..(bits - 1)].clone_from_slice(&generate[1..bits]);
 
     let carry_out = generate[0].clone();
 

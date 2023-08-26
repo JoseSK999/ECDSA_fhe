@@ -2,7 +2,6 @@ mod conversion;
 mod arithmetic;
 
 use std::array;
-use std::time::Instant;
 use primitive_types::{U256, U512};
 use rand::{Rng, thread_rng};
 
@@ -10,7 +9,7 @@ use secp256k1::{Secp256k1, Message, SecretKey, PublicKey};
 use secp256k1::ecdsa::Signature;
 use tfhe::boolean::prelude::*;
 
-use crate::arithmetic::{sign_ecdsa, sign_schnorr};
+use crate::arithmetic::sign_ecdsa;
 use crate::conversion::{bools_to_bytes, bytes_to_bools};
 
 fn main() {
@@ -23,30 +22,34 @@ fn main() {
     let secret_key = SecretKey::from_slice(&secret)
         .expect("32 bytes, within curve order");
 
-    // Encrypt ECDSA inputs
-    let (mut r, mut k, mut d) = encrypt_ecdsa_input(&secret, &ck);
-    let nonce_pub_x = bools_to_bytes(&r);
+    // Generate and encrypt the private ECDSA inputs
+    let (mut nonce_pub, mut nonce_inv, mut prv_key) = encrypt_ecdsa_input(&secret, &ck);
+    let r = bools_to_bytes(&nonce_pub);
 
     let message_bytes = array::from_fn::<u8, 32, _>(|_| random.gen());
-    let mut m = bytes_to_bools(&message_bytes);
+    let message = bytes_to_bools(&message_bytes);
 
     // Signature computation
-    let start = Instant::now();
-    let result = sign_ecdsa(&mut d, &mut k, &mut m, &mut r, &sk);
-    let end = Instant::now();
-    println!("{:?}", end.duration_since(start));
+    let result = sign_ecdsa(
+        &mut prv_key,
+        &mut nonce_inv,
+        &mut nonce_pub,
+        &message, &sk);
 
     // Decrypt
-    let decrypted = decrypt_bools(&result, &ck);
-    let s = bools_to_bytes(&decrypted);
+    let s = decrypt_bools(&result, &ck);
+    let raw_sig = [r, bools_to_bytes(&s)].concat();
 
     // Verify
     let public_key = PublicKey::from_secret_key(&secp, &secret_key);
     let message = Message::from_slice(&message_bytes).unwrap();
-    let mut sig = Signature::from_compact(&[nonce_pub_x, s].concat()).unwrap();
+    let mut sig = Signature::from_compact(&raw_sig).unwrap();
 
-    // s needs to lie in the lower half of the range in order for libsecp256k1 to accept the
-    // signature. This is to prevent malleability (BIP 146).
+    // The value 's' must be in the lower half of the allowable range to be valid according to the
+    // libsecp256k1 library. This constraint is in place to prevent signature malleability, as
+    // specified by BIP 146. Signature malleability occurs when there is more than one valid
+    // signature for the same transaction. By restricting 's' to the lower half, the signature
+    // becomes unique and non-malleable.
     sig.normalize_s();
 
     assert!(secp.verify_ecdsa(&message, &sig, &public_key).is_ok());
@@ -66,7 +69,7 @@ fn encrypt_ecdsa_input(secret_key: &[u8; 32], ck: &ClientKey) -> (Vec<bool>, Vec
 
     // Nonce modular inverse
     let nonce_inverse = bytes_to_bools(&modular_inverse(&nonce));
-    let priv_k = bytes_to_bools(&secret_key);
+    let priv_k = bytes_to_bools(secret_key);
 
     let d = encrypt_bools(&priv_k, ck);
     let k = encrypt_bools(&nonce_inverse, ck);
@@ -87,7 +90,7 @@ fn modular_inverse(base: &[u8; 32]) -> [u8; 32] {
         if y % U256::from(2) != U256::zero() {
             res = (res * x) % p;
         }
-        y = y / U256::from(2);
+        y /= U256::from(2);
         x = (x * x) % p;
     }
 
@@ -97,20 +100,14 @@ fn modular_inverse(base: &[u8; 32]) -> [u8; 32] {
     array::from_fn(|i| bytes[i+32])
 }
 
-pub fn encrypt_bools(bools: &Vec<bool>, ck: &ClientKey) -> Vec<Ciphertext> {
-    let mut ciphertext = vec![];
-
-    for bool in bools {
-        ciphertext.push(ck.encrypt(*bool));
-    }
-    ciphertext
+pub fn encrypt_bools(bools: &[bool], ck: &ClientKey) -> Vec<Ciphertext> {
+    bools.iter()
+        .map(|bool| ck.encrypt(*bool))
+        .collect()
 }
 
-pub fn decrypt_bools(ciphertext: &Vec<Ciphertext>, ck: &ClientKey) -> Vec<bool> {
-    let mut bools = vec![];
-
-    for cipher in ciphertext {
-        bools.push(ck.decrypt(&cipher));
-    }
-    bools
+pub fn decrypt_bools(ciphertext: &[Ciphertext], ck: &ClientKey) -> Vec<bool> {
+    ciphertext.iter()
+        .map(|cipher| ck.decrypt(cipher))
+        .collect()
 }
