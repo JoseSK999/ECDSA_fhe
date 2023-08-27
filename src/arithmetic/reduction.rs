@@ -3,7 +3,7 @@ use primitive_types::U512;
 use tfhe::boolean::prelude::{Ciphertext, ServerKey};
 use crate::arithmetic::addition::{add_257, add_258, add_385, add_385_with_256, mux, twos_complement};
 use crate::arithmetic::multiplication::{add_partial_products};
-use crate::conversion::u512_to_bool_vec;
+use crate::conversion::u512_to_bools;
 
 /* This module implements reduction modulo N, the 256-bit prime number used in secp256k1 signing,
 for 512 bit numbers (the result of 256 bit multiplication) and 257 bit numbers (result of addition).
@@ -117,7 +117,7 @@ fn complement_n() -> [bool; 258] {
         .unwrap();
     let complement = !prime + 1;
 
-    let vec = u512_to_bool_vec(complement);
+    let vec = u512_to_bools(complement);
 
     array::from_fn(|i| vec[254 + i])
 }

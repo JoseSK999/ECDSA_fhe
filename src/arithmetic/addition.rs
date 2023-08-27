@@ -340,115 +340,79 @@ pub fn mux(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitive_types::{U256, U512};
-    use rand::{Rng, thread_rng};
+    use primitive_types::U512;
     use tfhe::boolean::prelude::*;
-    use crate::conversion::{bool_vec_to_u512, bools_to_bytes_large, u256_to_bool_vec, u512_to_bool_vec};
+    use crate::conversion::{bools_to_u512, u512_to_bools};
     use crate::{decrypt_bools, encrypt_bools};
 
+    fn to_bools_and_encrypt(n: &str, bits_len: usize, ck: &ClientKey) -> Vec<Ciphertext> {
+        let mut v = u512_to_bools(U512::from_dec_str(n).unwrap());
+        encrypt_bools(&v.split_off(512 - bits_len), ck)
+    }
 
     #[test]
     fn test_add_257() {
         let (ck, sk) = gen_keys();
 
-        let mut x = u512_to_bool_vec(
-            U512::from_dec_str(
-                "117461139922381523541187616497497412477236974156110393889151351364158879534932")
-                .unwrap()
-        );
-        let mut y = u512_to_bool_vec(
-            U512::from_dec_str(
-                "149635844840778202076357383943823829963152350627394395922389037899805267124497")
-                .unwrap()
-        );
-
-        let a = encrypt_bools(&x.split_off(255), &ck);
-        let b = encrypt_bools(&y.split_off(255), &ck);
-
-        assert_eq!(a.len(), 257);
-        assert_eq!(b.len(), 257);
+        let x = to_bools_and_encrypt("117461139922381523541187616497497412477236974156110393889151351364158879534932", 257, &ck);
+        let y = to_bools_and_encrypt("149635844840778202076357383943823829963152350627394395922389037899805267124497", 257, &ck);
 
         // Add and insert carry value
-        let (mut result, carry) = add_257(&a, &b, &sk);
+        let (mut result, carry) = add_257(&x, &y, &sk);
         result.insert(0, carry);
 
         let decrypted = decrypt_bools(&result, &ck);
+        let int = bools_to_u512(decrypted);
 
-        let int = U512::from_big_endian(
-            &bools_to_bytes_large(decrypted)
-        );
-
-        let should_be = U512::from_dec_str(
-            "267096984763159725617545000441321242440389324783504789811540389263964146659429")
-            .unwrap();
+        let should_be = U512::from_dec_str("267096984763159725617545000441321242440389324783504789811540389263964146659429").unwrap();
 
         assert_eq!(int, should_be);
     }
 
-    #[test]
-    fn test_add_256() {
-        let (ck, sk) = gen_keys();
-
-        let x = u256_to_bool_vec(
-            U256::from_dec_str(
-            "32180499282295368862936175210653153969476856747234275168272302057610963853214")
-            .unwrap()
-        );
-        let y = u256_to_bool_vec(
-            U256::from_dec_str(
-            "73482104862469435698329704986464035699288519680142175016745041282392618033695")
-            .unwrap()
-        );
-
-        let a = encrypt_bools(&x, &ck);
-        let b = encrypt_bools(&y, &ck);
-
-        let (mut result, carry) = add(&a, &b, 8, &sk);
-        result.insert(0, carry);
-
-        let decrypted = decrypt_bools(&result, &ck);
-
-        let int = U512::from_big_endian(
-            &bools_to_bytes_large(decrypted)
-        );
-
-        let should_be = U512::from_dec_str(
-            "105662604144764804561265880197117189668765376427376450185017343340003581886909")
-            .unwrap();
-
-        assert_eq!(int, should_be);
-    }
-
+    // add_385 is internally adding 256 bits, so we are testing both
     #[test]
     fn test_add_385() {
         let (ck, sk) = gen_keys();
-        let mut random = thread_rng();
 
-        // Generate two 385 bit vectors
-        let mut vec: Vec<bool> = Vec::new();
-        let mut vec_2: Vec<bool> = Vec::new();
-        for _ in 0..385 {
-            vec.push(random.gen());
-            vec_2.push(random.gen());
-        }
+        // Test max 385-bit values
+        let max = vec![true; 385];
+        let encrypted = encrypt_bools(&max, &ck);
 
-        // Encrypt the vectors
-        let encrypted_vec = encrypt_bools(&vec, &ck);
-        let encrypted_vec_2 = encrypt_bools(&vec_2, &ck);
-
-        // Addition
-        let (mut result_enc, carry) = add_385(&encrypted_vec, &encrypted_vec_2, &sk);
+        let (mut result_enc, carry) = add_385(&encrypted, &encrypted, &sk);
         result_enc.insert(0, carry);
 
-        // Decryption
         let result_clear = decrypt_bools(&result_enc, &ck);
 
-        let result = bool_vec_to_u512(result_clear);
-        let num = bool_vec_to_u512(vec);
-        let num_2 = bool_vec_to_u512(vec_2);
+        let result = bools_to_u512(result_clear);
+        let max = bools_to_u512(max);
+        assert_eq!(result, max + max);
 
-        let expected = num + num_2;
+        // Test min 385-bit values
+        let min = vec![false; 385];
+        let encrypted = encrypt_bools(&min, &ck);
 
-        assert_eq!(result, expected);
+        let (mut result_enc, carry) = add_385(&encrypted, &encrypted, &sk);
+        result_enc.insert(0, carry);
+
+        let result_clear = decrypt_bools(&result_enc, &ck);
+
+        let result = bools_to_u512(result_clear);
+        let min = bools_to_u512(min);
+        assert_eq!(result, min + min);
+
+        // Test normal case
+        let x = to_bools_and_encrypt("47025062602514006042727509475978745000638010917821275502568093707838353316384434056336283145249999537604249106769469", 385, &ck);
+        let y = to_bools_and_encrypt("67815384912303466065544815297240550038024383379717173427803252354458990812799388813460358985039646741378368819296071", 385, &ck);
+
+        let (mut result, carry) = add_385(&x, &y, &sk);
+        result.insert(0, carry);
+
+        let decrypted = decrypt_bools(&result, &ck);
+        let int = bools_to_u512(decrypted);
+
+        // 386-bit number
+        let should_be = U512::from_dec_str("114840447514817472108272324773219295038662394297538448930371346062297344129183822869796642130289646278982617926065540").unwrap();
+
+        assert_eq!(int, should_be);
     }
 }
