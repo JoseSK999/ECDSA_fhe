@@ -34,4 +34,4 @@ We multiply both sides by ``a^-1`` and get: ```a^-1 ≡ a^(p-2) mod p```. We can
 
 In other words we can compute the ``nonce`` modular inverse as: ```nonce^(N-2) mod N```. This is very fast in cleartext, but in FHE it would require many homomorphic multiplications and reductions which makes it impractical (the program would be orders of magnitude slower).
 
-For a detailed explanation of the program see our [tutorial](https://github.com/JoseSK999/ECDSA_fhe/blob/2ad95d1dbc2f54eff690256831f0abd58c44c783/tutorial.md).
+For a detailed explanation of the program see our [tutorial](https://github.com/JoseSK999/ECDSA_fhe/blob/main/tutorial.md). You can also find a simple integer implementation of ECDSA [here](https://github.com/JoseSK999/ECDSA_fhe_int/tree/main).
