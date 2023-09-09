@@ -1,5 +1,4 @@
-use std::array;
-use primitive_types::{U256, U512};
+use primitive_types::U256;
 use tfhe::boolean::prelude::*;
 use crate::arithmetic::addition::add;
 use crate::arithmetic::multiplication::{multiply_by_ciphertext, multiply_by_scalar};
