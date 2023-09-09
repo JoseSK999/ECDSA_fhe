@@ -2,7 +2,6 @@ mod conversion;
 mod arithmetic;
 
 use std::array;
-use primitive_types::{U256, U512};
 use rand::{Rng, thread_rng};
 
 use secp256k1::{Secp256k1, Message, SecretKey, PublicKey};
@@ -23,7 +22,7 @@ fn main() {
         .expect("32 bytes, within curve order");
 
     // Generate and encrypt the private ECDSA inputs
-    let (mut nonce_pub, mut nonce, mut prv_key) = encrypt_ecdsa_input(&secret, &ck);
+    let (mut nonce_pub, nonce, mut prv_key) = encrypt_ecdsa_input(&secret, &ck);
     let r = bools_to_bytes(&nonce_pub);
 
     let message_bytes = array::from_fn::<u8, 32, _>(|_| random.gen());
@@ -32,7 +31,7 @@ fn main() {
     // Signature computation
     let result = sign_ecdsa(
         &mut prv_key,
-        &mut nonce,
+        nonce,
         &mut nonce_pub,
         &message, &sk);
 
@@ -75,28 +74,6 @@ fn encrypt_ecdsa_input(secret_key: &[u8; 32], ck: &ClientKey) -> (Vec<bool>, Vec
     let r = bytes_to_bools(&array::from_fn(|i| nonce_pub[i+1]));
 
     (r, k, d)
-}
-
-fn modular_inverse(base: &[u8; 32]) -> [u8; 32] {
-    let base = U256::from_big_endian(base);
-    let p = U256::from_dec_str("115792089237316195423570985008687907852837564279074904382605163141518161494337").unwrap();
-
-    let mut res = U512::one();
-    let mut x = U512::from(base % p);
-    let mut y = p - U256::from(2);
-
-    while y > U256::zero() {
-        if y % U256::from(2) != U256::zero() {
-            res = (res * x) % p;
-        }
-        y /= U256::from(2);
-        x = (x * x) % p;
-    }
-
-    let mut bytes = [0u8; 64];
-    res.to_big_endian(&mut bytes);
-
-    array::from_fn(|i| bytes[i+32])
 }
 
 pub fn encrypt_bools(bools: &[bool], ck: &ClientKey) -> Vec<Ciphertext> {
