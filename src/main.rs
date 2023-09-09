@@ -67,7 +67,6 @@ fn encrypt_ecdsa_input(secret_key: &[u8; 32], ck: &ClientKey) -> (Vec<bool>, Vec
         &SecretKey::from_slice(&nonce).expect("32 bytes, within curve order"),
     ).serialize();
 
-    // Nonce modular inverse
     let nonce_inverse = bytes_to_bools(&modular_inverse(&nonce));
     let priv_k = bytes_to_bools(secret_key);
 
