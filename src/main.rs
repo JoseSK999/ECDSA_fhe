@@ -23,7 +23,7 @@ fn main() {
         .expect("32 bytes, within curve order");
 
     // Generate and encrypt the private ECDSA inputs
-    let (mut nonce_pub, mut nonce_inv, mut prv_key) = encrypt_ecdsa_input(&secret, &ck);
+    let (mut nonce_pub, mut nonce, mut prv_key) = encrypt_ecdsa_input(&secret, &ck);
     let r = bools_to_bytes(&nonce_pub);
 
     let message_bytes = array::from_fn::<u8, 32, _>(|_| random.gen());
@@ -32,7 +32,7 @@ fn main() {
     // Signature computation
     let result = sign_ecdsa(
         &mut prv_key,
-        &mut nonce_inv,
+        &mut nonce,
         &mut nonce_pub,
         &message, &sk);
 
@@ -67,11 +67,11 @@ fn encrypt_ecdsa_input(secret_key: &[u8; 32], ck: &ClientKey) -> (Vec<bool>, Vec
         &SecretKey::from_slice(&nonce).expect("32 bytes, within curve order"),
     ).serialize();
 
-    let nonce_inverse = bytes_to_bools(&modular_inverse(&nonce));
-    let priv_k = bytes_to_bools(secret_key);
+    let nonce_bools = bytes_to_bools(&nonce);
+    let priv_k_bools = bytes_to_bools(secret_key);
 
-    let d = encrypt_bools(&priv_k, ck);
-    let k = encrypt_bools(&nonce_inverse, ck);
+    let d = encrypt_bools(&priv_k_bools, ck);
+    let k = encrypt_bools(&nonce_bools, ck);
     let r = bytes_to_bools(&array::from_fn(|i| nonce_pub[i+1]));
 
     (r, k, d)
