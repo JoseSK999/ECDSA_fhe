@@ -66,6 +66,10 @@ fn encrypt_ecdsa_input(secret_key: &[u8; 32], ck: &ClientKey) -> (Vec<bool>, Vec
         &secp,
         &SecretKey::from_slice(&nonce).expect("32 bytes, within curve order"),
     ).serialize();
+    let nonce_pub2 = ec_mult(&nonce);
+
+    assert_eq!(nonce_pub[1..], nonce_pub2);
+    println!("EC multiplication computed successfully");
 
     // Nonce modular inverse
     let nonce_inverse = bytes_to_bools(&modular_inverse_n(&nonce));
@@ -76,6 +80,38 @@ fn encrypt_ecdsa_input(secret_key: &[u8; 32], ck: &ClientKey) -> (Vec<bool>, Vec
     let r = bytes_to_bools(&array::from_fn(|i| nonce_pub[i+1]));
 
     (r, k, d)
+}
+
+fn ec_mult(secret: &[u8; 32]) -> [u8; 32] {
+    let secret_bools = bytes_to_bools(secret);
+
+    let mut res = (U512::zero(), U512::zero());
+    // Secp256k1 generator point
+    let mut temp = (
+        U512::from_dec_str("55066263022277343669578718895168534326250603453777594175500187360389116729240").unwrap(),
+        U512::from_dec_str("32670510020758816978083085130507043184471273380659243275938904335757337482424").unwrap(),
+    );
+
+    let mut initial_res = true;
+
+    for bit in secret_bools.iter().rev() {
+        if *bit {
+            if initial_res {
+                res = temp;
+                initial_res = false;
+
+            } else {
+                res = point_addition(res, temp);
+            }
+        }
+        temp = point_doubling(temp);
+    }
+
+    // res is the resulting public key, we just take its x coordinate
+    let mut bytes = [0u8; 64];
+    res.0.to_big_endian(&mut bytes);
+
+    array::from_fn(|i| bytes[i+32])
 }
 
 fn point_addition(point_1: (U512, U512), point_2: (U512, U512)) -> (U512, U512) {
